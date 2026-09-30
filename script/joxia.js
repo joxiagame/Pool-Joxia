@@ -68,20 +68,48 @@
   }
   patchScore();
 
-  // --- contrôles tactiles -> souris (le moteur écoute document.onmouse*) ---
+  // --- contrôles tactiles ---
+  // Menus : tap = clic souris. En jeu : tirer-glisser depuis la bille = viser
+  // (direction du doigt) + doser la puissance (longueur du glissement), relâcher = frapper.
   function pt(t) { return { pageX: t.pageX, pageY: t.pageY, which: 1 }; }
+  var aiming = false, movedPx = 0, startScreen = null;
+  function inGameHumanTurn() {
+    try {
+      if (typeof GAME_STOPPED !== "undefined" && GAME_STOPPED) return false;
+      if (!window.Game || !Game.policy || !Game.gameWorld || !Game.gameWorld.stick) return false;
+      if (Game.policy.turnPlayed) return false;
+      if (typeof AI_ON !== "undefined" && AI_ON && typeof AI_PLAYER_NUM !== "undefined" && Game.policy.turn === AI_PLAYER_NUM) return false;
+      return true;
+    } catch (e) { return false; }
+  }
   document.addEventListener("touchstart", function (e) {
     if (!e.touches.length) return;
-    if (typeof handleMouseDown === "function") handleMouseDown(pt(e.touches[0]));
+    var t = e.touches[0];
+    if (typeof handleMouseDown === "function") handleMouseDown(pt(t)); // menus + visée
+    aiming = inGameHumanTurn();
+    movedPx = 0; startScreen = { x: t.clientX, y: t.clientY };
     if (e.cancelable) e.preventDefault();
   }, { passive: false });
   document.addEventListener("touchmove", function (e) {
     if (!e.touches.length) return;
-    if (typeof handleMouseMove === "function") handleMouseMove(pt(e.touches[0]));
+    var t = e.touches[0];
+    if (typeof handleMouseMove === "function") handleMouseMove(pt(t)); // la visée suit le doigt
+    if (startScreen) movedPx = Math.max(movedPx, Math.hypot(t.clientX - startScreen.x, t.clientY - startScreen.y));
     if (e.cancelable) e.preventDefault();
   }, { passive: false });
   document.addEventListener("touchend", function (e) {
     var t = (e.changedTouches && e.changedTouches[0]) || { pageX: 0, pageY: 0 };
+    // frappe tactile : glissement suffisant depuis la bille -> tir
+    if (aiming && movedPx > 18) {
+      try {
+        if (typeof handleMouseMove === "function") handleMouseMove(pt(t));
+        var wb = Game.gameWorld.whiteBall.position, mp = Mouse.position;
+        var dx = mp.x - wb.x, dy = mp.y - wb.y, dist = Math.hypot(dx, dy);
+        var power = Math.max(8, Math.min(75, dist * 0.09));
+        Game.gameWorld.stick.shoot(power, Math.atan2(dy, dx));
+      } catch (err) { console.warn("tir tactile", err); }
+    }
+    aiming = false; startScreen = null;
     if (typeof handleMouseUp === "function") handleMouseUp(pt(t));
     if (e.cancelable) e.preventDefault();
   }, { passive: false });
